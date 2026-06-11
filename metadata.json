@@ -1,0 +1,6 @@
+{
+  "name": "USMLE Step 2 CK Tracker",
+  "description": "Log your UWorld progress, weak systems, and key study takeaways.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

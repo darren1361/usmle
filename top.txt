@@ -1,0 +1,145 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { useState, useMemo } from 'react';
+import { RefreshCcw, Calendar } from 'lucide-react';
+import { USMLERow } from '../types';
+import FocusTimer from './FocusTimer';
+
+interface StatsDashboardProps {
+ rows: USMLERow[];
+ onSelectSystemFilter: (system: string) => void;
+ activeSystemFilter: string;
+}
+
+export default function StatsDashboard({ rows }: StatsDashboardProps) {
+
+ // Compute daily question count progress and weekly carry-over goals
+ const studyTaskProgress = useMemo(() => {
+ const today = new Date();
+ const dayStr = today.toLocaleDateString('en-CA');
+ const dayOfWeek = today.getDay(); // 0 is Sun, 1 is Mon, etc.
+ const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+ // Get Monday of current calendar week
+ const mondayDiff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+ const monday = new Date(today);
+ monday.setDate(today.getDate() + mondayDiff);
+ const thisMondayStr = monday.toLocaleDateString('en-CA');
+
+ const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+ const daysData = weekDays.map((name, index) => {
+ const d = new Date(monday);
+ d.setDate(monday.getDate() + index);
+ const dateStr = d.toLocaleDateString('en-CA');
+ // Count attempts matching this dateStr
+ const count = rows.filter(r => r.date === dateStr && (r.attempt1 || r.attempt2 || r.studyGuide)).length;
+ return {
+ name,
+ dateStr,
+ count,
+ isToday: dateStr === dayStr,
+ percent: Math.min(100, (count / 40) * 100),
+ isCompleted: count >= 40
+ };
+ });
+
+ // Count today's data directly to ensure latest is captured
+ const activeTodayData = daysData.find(d => d.isToday) || {
+ name: isWeekend ? (dayOfWeek === 6 ? 'Sat' : 'Sun') : 'Today',
+ dateStr: dayStr,
+ count: rows.filter(r => r.date === dayStr && (r.attempt1 || r.attempt2 || r.studyGuide)).length,
+ isToday: true,
+ percent: Math.min(100, (rows.filter(r => r.date === dayStr && (r.attempt1 || r.attempt2 || r.studyGuide)).length / 40) * 100),
+ isCompleted: rows.filter(r => r.date === dayStr && (r.attempt1 || r.attempt2 || r.studyGuide)).length >= 40
+ };
+
+ const weekCompletedDaysCount = daysData.filter(d => d.isCompleted).length;
+
+ // Calculate weekly carry-over
+ const rowsByDate = rows.reduce((acc, row) => {
+ if (row.date && (row.attempt1 || row.attempt2 || row.studyGuide)) {
+ acc[row.date] = (acc[row.date] || 0) + 1;
+ }
+ return acc;
+ }, {} as Record<string, number>);
+
+ const weekStats: Record<string, number> = {};
+ let earliestMondayStr = thisMondayStr;
+
+ Object.keys(rowsByDate).forEach(date => {
+ // Create a local date for the log
+ const [y, m, dstr] = date.split('-');
+ const d = new Date(parseInt(y), parseInt(m) - 1, parseInt(dstr));
+ if (!isNaN(d.getTime())) {
+ const day = d.getDay();
+ const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+ d.setDate(diff); // Shift to Monday
+ const mStr = d.toLocaleDateString('en-CA');
+ weekStats[mStr] = (weekStats[mStr] || 0) + rowsByDate[date];
+ if (mStr < earliestMondayStr) earliestMondayStr = mStr;
+ }
+ });
+
+ let iter = new Date(`${earliestMondayStr}T12:00:00`);
+ let currentDeficit = 0;
+ 
+ // Iterate from the earliest recorded Monday up to LAST week
+ while (true) {
+ const wStr = iter.toLocaleDateString('en-CA');
+ if (wStr >= thisMondayStr) {
+ break; // Stop before processing THIS week
+ }
+ 
+ const completed = weekStats[wStr] || 0;
+ const target = 200 + currentDeficit;
+ 
+ if (completed < target) {
+ currentDeficit = target - completed;
+ } else {
+ currentDeficit = 0; // surplus discarded
+ }
+ 
+ iter.setDate(iter.getDate() + 7);
+ }
+
+ const currentWeekTarget = 200 + currentDeficit;
+ 
+ // Sum this week's progress
+ const currentWeekCompleted = weekDays.reduce((sum, _, index) => {
+ const d = new Date(monday);
+ d.setDate(monday.getDate() + index);
+ return sum + (rowsByDate[d.toLocaleDateString('en-CA')] || 0);
+ }, 0);
+
+ // Calculate Dynamic Required Daily Progress
+ let requiredDailyToPace = 0;
+ if (currentWeekCompleted < currentWeekTarget) {
+ if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+ const daysToFriday = 6 - dayOfWeek;
+ requiredDailyToPace = Math.ceil((currentWeekTarget - currentWeekCompleted) / daysToFriday);
+ } else {
+ const daysToSunday = dayOfWeek === 6 ? 2 : 1; 
+ requiredDailyToPace = Math.ceil((currentWeekTarget - currentWeekCompleted) / daysToSunday);
+ }
+ }
+
+ return {
+ days: daysData,
+ todayData: activeTodayData,
+ isWeekend,
+ dayOfWeek,
+ weekCompletedDaysCount,
+ dayStr,
+ weekly: {
+ completed: currentWeekCompleted,
+ target: currentWeekTarget,
+ carryOver: currentDeficit,
+ requiredDailyToPace
+ }
+ };
+ }, [rows]);
+
+ 

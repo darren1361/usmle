@@ -20,6 +20,7 @@ export interface Job {
   raw_description: string | null;
   status: JobStatus;
   user_tag: JobTag;
+  source: "linkedin" | "indeed";
   created_at: string;
 }
 
@@ -31,4 +32,5 @@ export interface ParsedEmail {
   jobUrl: string | null;
   emailDate: string | null;
   rawDescription: string | null;
+  source: "linkedin" | "indeed";
 }

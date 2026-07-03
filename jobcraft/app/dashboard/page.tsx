@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { RefreshCw, Search } from "lucide-react";
+import { RefreshCw, Search, Plus } from "lucide-react";
 import { NavBar } from "@/components/NavBar";
 import { JobCard } from "@/components/JobCard";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,12 @@ const TAG_FILTERS: { label: string; value: JobTag | "all" }[] = [
   { label: "Applied", value: "applied" },
 ];
 
+const SOURCE_FILTERS: { label: string; value: string }[] = [
+  { label: "All Sources", value: "all" },
+  { label: "LinkedIn", value: "linkedin" },
+  { label: "Indeed", value: "indeed" },
+];
+
 export default function DashboardPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,6 +37,9 @@ export default function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
   const [tagFilter, setTagFilter] = useState<JobTag | "all">("all");
   const [locationFilter, setLocationFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [linkedAccounts, setLinkedAccounts] = useState<{id: string; email: string}[]>([]);
 
   const loadJobs = useCallback(async () => {
     const res = await fetch("/api/emails");
@@ -39,6 +48,13 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => { loadJobs(); }, [loadJobs]);
+
+  useEffect(() => {
+    fetch("/api/auth/linked-accounts")
+      .then((r) => r.ok ? r.json() : [])
+      .then(setLinkedAccounts)
+      .catch(() => {});
+  }, []);
 
   const syncEmails = async () => {
     setSyncing(true);
@@ -63,6 +79,16 @@ export default function DashboardPage() {
     if (statusFilter !== "all" && j.status !== statusFilter) return false;
     if (tagFilter !== "all" && j.user_tag !== tagFilter) return false;
     if (locationFilter !== "all" && j.location !== locationFilter) return false;
+    if (sourceFilter !== "all" && j.source !== sourceFilter) return false;
+    if (dateFilter) {
+      const jobDate = j.email_date ? new Date(j.email_date) : new Date(j.created_at);
+      const year = jobDate.getFullYear();
+      const month = String(jobDate.getMonth() + 1).padStart(2, '0');
+      const day = String(jobDate.getDate()).padStart(2, '0');
+      const jobDateString = `${year}-${month}-${day}`;
+      
+      if (jobDateString !== dateFilter) return false;
+    }
     return true;
   });
 
@@ -73,12 +99,23 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Job Alerts</h1>
-            <p className="text-sm text-gray-500">{jobs.length} jobs synced from Gmail</p>
+            <p className="text-sm text-gray-500">
+              {jobs.length} jobs synced
+              {linkedAccounts.length > 0 && ` from ${1 + linkedAccounts.length} accounts`}
+            </p>
           </div>
-          <Button onClick={syncEmails} disabled={syncing} variant="outline" className="gap-2">
-            <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Syncing…" : "Sync Gmail"}
-          </Button>
+          <div className="flex gap-2">
+            <a href="/api/auth/link-gmail">
+              <Button variant="outline" className="gap-2">
+                <Plus className="h-4 w-4" />
+                Add Gmail
+              </Button>
+            </a>
+            <Button onClick={syncEmails} disabled={syncing} variant="outline" className="gap-2">
+              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Syncing…" : "Sync All"}
+            </Button>
+          </div>
         </div>
 
         <div className="mb-4 space-y-3">
@@ -101,6 +138,12 @@ export default function DashboardPage() {
                 <option key={l ?? "all"} value={l ?? "all"}>{l === "all" ? "All Locations" : l}</option>
               ))}
             </select>
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700"
+            />
           </div>
           <div className="flex flex-wrap gap-2">
             {STATUS_TABS.map((t) => (
@@ -109,6 +152,20 @@ export default function DashboardPage() {
                 onClick={() => setStatusFilter(t.value)}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                   statusFilter === t.value
+                    ? "bg-indigo-600 text-white"
+                    : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+            <span className="text-gray-300">|</span>
+            {SOURCE_FILTERS.map((t) => (
+              <button
+                key={t.value}
+                onClick={() => setSourceFilter(t.value)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  sourceFilter === t.value
                     ? "bg-indigo-600 text-white"
                     : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
                 }`}
